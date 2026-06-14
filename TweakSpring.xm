@@ -3,9 +3,55 @@
 
 short statusBarStyle, screenRoundness, appswitcherRoundness, iPadDockNumIcons, numberOfRecentApps;
 BOOL enabled, wantsHomeBarSB, wantsHomeBarLS, wantsReduceRows, wantsRoundedCorners, wantsXButtons;
-BOOL wantsCCGrabber, wantsProudLock, wantsHideSBCC,wantsLSShortcuts, wantsBatteryPercent, wantsiPadDock;
+BOOL wantsCCGrabber, wantsProudLock, wantsHideSBCC, wantsLSShortcuts, wantsBatteryPercent, wantsiPadDock;
 BOOL wantsiPadMultitasking, wantsRecentApps, wantsiPadAppSwitcher, wantsDockInApps, wantsDockInSwitcher;
 BOOL noBreadCrumbs;
+
+@class BSPlatform;
+@class SBHDefaultIconListLayoutProvider;
+@class CSQuickActionsView;
+@class CSFullscreenNotificationView;
+@class SBIconListGridLayoutConfiguration;
+@class CCUIHeaderPocketView;
+@class CCUIModularControlCenterOverlayViewController;
+@class _UIBatteryView;
+@class _UIStatusBarStringView;
+@class SBReachabilitySettings;
+@class _UIStatusBarVisualProvider_iOS;
+@class _UIStatusBarVisualProvider_Split828;
+@class _UIStatusBarVisualProvider_DynamicSplit;
+@class SBFHomeGrabberSettings;
+@class CSTeachableMomentsContainerView;
+@class MTLumaDodgePillSettings;
+@class SBFloatingDockSuggestionsModel;
+@class SBAppSwitcherSettings;
+@class SBFluidSwitcherViewController;
+@class _UIRootWindow;
+@class SBReachabilityBackgroundView;
+@class SBUIPasscodeBiometricResource;
+@class SBDashBoardLockScreenEnvironment;
+@class SBFLockScreenDateView;
+@class SBUIProudLockIconView;
+@class CSCombinedListViewController;
+@class SBUIBiometricResource;
+@class WGWidgetGroupViewController;
+@class SBFloatingDockController;
+@class SBDeckSwitcherModifier;
+@class SBFloatingDockBehaviorAssertion;
+@class SBApplication;
+@class SBPlatformController;
+@class SBMainWorkspace;
+@class SBApplicationInfo;
+
+
+@interface _UIRootWindow : UIView
+- (void)_setContinuousCornerRadius:(double)radius;
+@end
+
+
+@interface SBReachabilityBackgroundView : UIView
+- (double)_displayCornerRadius;
+@end
 
 %hook BSPlatform
 - (NSInteger)homeButtonType {
@@ -18,27 +64,26 @@ BOOL noBreadCrumbs;
 @end
 
 %hook SBHDefaultIconListLayoutProvider
--(NSUInteger)screenType {
+- (NSUInteger)screenType {
     return UIScreen.mainScreen.screenSizeCategory - 1;
 }
 %end
 
 @interface CSQuickActionsView : UIView
 - (UIEdgeInsets)_buttonOutsets;
-@property (nonatomic, retain) UIControl *flashlightButton; 
+@property (nonatomic, retain) UIControl *flashlightButton;
 @property (nonatomic, retain) UIControl *cameraButton;
 @end
 
 %hook CSQuickActionsView
 - (BOOL)_prototypingAllowsButtons {
-	return wantsLSShortcuts;
+    return wantsLSShortcuts;
 }
 - (void)_layoutQuickActionButtons {
-    CGRect const screenBounds = [UIScreen mainScreen].bounds;
-    int const y = screenBounds.size.height - 90 - [self _buttonOutsets].top;
-
-    [self flashlightButton].frame = CGRectMake(46, y, 50, 50);
-    [self cameraButton].frame = CGRectMake(screenBounds.size.width - 96, y, 50, 50);
+    CGRect screenBounds = [UIScreen mainScreen].bounds;
+    CGFloat y = screenBounds.size.height - 90 - [self _buttonOutsets].top;
+    self.flashlightButton.frame = CGRectMake(46, y, 50, 50);
+    self.cameraButton.frame = CGRectMake(screenBounds.size.width - 96, y, 50, 50);
 }
 %end
 
@@ -53,9 +98,9 @@ BOOL noBreadCrumbs;
 
 %hook SBIconListGridLayoutConfiguration
 - (NSUInteger)numberOfPortraitRows {
-    NSUInteger const orig = %orig;
+    NSUInteger orig = %orig;
     if (orig < 4) return orig;
-    return orig - wantsReduceRows;
+    return orig - (wantsReduceRows ? 1 : 0);
 }
 %end
 
@@ -79,7 +124,7 @@ BOOL noBreadCrumbs;
 %end
 
 %group batteryPercent
-%hook _UIBatteryView 
+%hook _UIBatteryView
 -(BOOL)_currentlyShowsPercentage {
     return YES;
 }
@@ -87,19 +132,18 @@ BOOL noBreadCrumbs;
     return NO;
 }
 %end
-
-%hook _UIStatusBarStringView  
+%hook _UIStatusBarStringView
 - (void)setText:(NSString *)text {
-	if ([text containsString:@"%"]) 
-      return;
-    else 
-       %orig(text);
-}     
+    if ([text containsString:@"%"])
+        return;
+    else
+        %orig(text);
+}
 %end
 %end
 
 %hook SBReachabilitySettings
-- (void)setSystemWideSwipeDownHeight:(double) systemWideSwipeDownHeight { 
+- (void)setSystemWideSwipeDownHeight:(double)systemWideSwipeDownHeight {
     %orig(100);
 }
 %end
@@ -107,7 +151,7 @@ BOOL noBreadCrumbs;
 %group defaultStatusBar
 %hook _UIStatusBarVisualProvider_iOS
 + (Class)class {
-    return %c(_UIStatusBarVisualProvider_LegacyPhone);
+    return NSClassFromString(@"_UIStatusBarVisualProvider_LegacyPhone");
 }
 %end
 %end
@@ -115,26 +159,23 @@ BOOL noBreadCrumbs;
 %group StatusBarX
 %hook _UIStatusBarVisualProvider_iOS
 + (Class)class {
-    return %c(_UIStatusBarVisualProvider_Split54);
+    return NSClassFromString(@"_UIStatusBarVisualProvider_Split828");
 }
 %end
-
 %hook SBIconListGridLayoutConfiguration
-- (UIEdgeInsets)portraitLayoutInsets { 
-    UIEdgeInsets const x = %orig;
-    NSUInteger const locationRows = MSHookIvar<NSUInteger>(self, "_numberOfPortraitRows");
-    if (locationRows < 4) {
-        return x;
-    }
-    return UIEdgeInsetsMake(x.top+10, x.left, x.bottom, x.right);
+- (UIEdgeInsets)portraitLayoutInsets {
+    UIEdgeInsets insets = %orig;
+    NSUInteger rows = MSHookIvar<NSUInteger>(self, "_numberOfPortraitRows");
+    if (rows < 4) return insets;
+    return UIEdgeInsetsMake(insets.top + 10, insets.left, insets.bottom, insets.right);
 }
 %end
 %end
 
 %group StatusBarXSpacing
-%hook _UIStatusBarVisualProvider_Split54
+%hook _UIStatusBarVisualProvider_Split828
 +(CGSize)notchSize {
-    CGSize const orig = %orig;
+    CGSize orig = %orig;
     return CGSizeMake(orig.width, 18);
 }
 +(double)height {
@@ -143,18 +184,37 @@ BOOL noBreadCrumbs;
 %end
 %end
 
+%group StatusBarDynamicSplit
+%hook _UIStatusBarVisualProvider_iOS
++ (Class)class {
+    return NSClassFromString(@"_UIStatusBarVisualProvider_DynamicSplit");
+}
+%end
+%end
+
+%hook SBIconListGridLayoutConfiguration
+- (UIEdgeInsets)portraitLayoutInsets {
+    UIEdgeInsets insets = %orig;
+    NSUInteger rows = MSHookIvar<NSUInteger>(self, "_numberOfPortraitRows");
+    if (rows < 4) return insets;
+    return UIEdgeInsetsMake(insets.top + 10, insets.left, insets.bottom, insets.right);
+}
+%end
+
+
 %group StatusBariPad
 %hook _UIStatusBarVisualProvider_iOS
 + (Class)class {
-    if (wantsRoundedCorners && screenRoundness > 15) return %c(_UIStatusBarVisualProvider_RoundedPad_ForcedCellular);
-    return %c(_UIStatusBarVisualProvider_Pad_ForcedCellular);
+    if (wantsRoundedCorners && screenRoundness > 15)
+        return NSClassFromString(@"_UIStatusBarVisualProvider_RoundedPad_ForcedCellular");
+    return NSClassFromString(@"_UIStatusBarVisualProvider_Pad_ForcedCellular");
 }
 %end
 
 %hook CCUIHeaderPocketView
 - (void)setFrame:(CGRect)frame {
-    if (wantsRoundedCorners && screenRoundness > 15) %orig(CGRectSetY(frame, -20));
-    else %orig(CGRectSetY(frame, -24));
+    CGFloat yOffset = (wantsRoundedCorners && screenRoundness > 15) ? -20 : -24;
+    %orig(CGRectSetY(frame, yOffset));
 }
 %end
 %end
@@ -162,12 +222,12 @@ BOOL noBreadCrumbs;
 %hook SBFHomeGrabberSettings
 - (BOOL)isEnabled {
     return wantsHomeBarSB;
-} 
+}
 %end
 
 %group hideHomeBarLS
 %hook CSTeachableMomentsContainerView
--(void)setHomeAffordanceContainerView:(UIView *)arg1{
+-(void)setHomeAffordanceContainerView:(UIView *)arg1 {
     return;
 }
 %end
@@ -176,8 +236,8 @@ BOOL noBreadCrumbs;
 %group completelyRemoveHomeBar
 %hook MTLumaDodgePillSettings
 - (void)setHeight:(double)arg1 {
-	arg1 = 0;
-	%orig;
+    arg1 = 0;
+    %orig;
 }
 %end
 %end
@@ -188,7 +248,7 @@ BOOL noBreadCrumbs;
     NSUInteger rows = MSHookIvar<NSUInteger>(self, "_numberOfPortraitRows");
     if (rows == 1)
         return iPadDockNumIcons;
-	return %orig;
+    return %orig;
 }
 %end
 %end
@@ -196,57 +256,54 @@ BOOL noBreadCrumbs;
 %group customNumRecentApps
 %hook SBFloatingDockSuggestionsModel
 -(id)initWithMaximumNumberOfSuggestions:(unsigned long long)arg1 iconController:(id)arg2 recentsController:(id)arg3 recentsDataStore:(id)arg4 recentsDefaults:(id)arg5 floatingDockDefaults:(id)arg6 appSuggestionManager:(id)arg7 analyticsClient:(id)arg8 applicationController:(id)arg9 {
-    arg1 = numberOfRecentApps;
-    return %orig;
+    return %orig(numberOfRecentApps, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9);
 }
 %end
-%end 
+%end
 
 %group noRecentApps
 %hook SBFloatingDockSuggestionsModel
 - (BOOL)_shouldProcessAppSuggestion:(id)arg1 {
-	return NO;
+    return NO;
 }
-
 -(void)_setRecentsEnabled:(BOOL)arg1 {
-	return %orig(NO);
+    %orig(NO);
 }
 %end
 %end
 
 %hook SBFluidSwitcherViewController
 - (double)displayCornerRadius {
-	return appswitcherRoundness;
+    return appswitcherRoundness;
 }
 %end
 
 %group iPadAppSwitcher
 %hook SBAppSwitcherSettings
 -(void)setSwitcherStyle:(NSInteger)arg1 {
-    return %orig(2);
+    %orig(2);
 }
 %end
 %end
 
 %group ccGrabber
-
 @interface CSTeachableMomentsContainerView : UIView
 @property(retain, nonatomic) UIView *controlCenterGrabberView;
 @property(retain, nonatomic) UIView *controlCenterGrabberEffectContainerView;
-@property (retain, nonatomic) UIImageView * controlCenterGlyphView; 
+@property(retain, nonatomic) UIImageView *controlCenterGlyphView;
 @end
 
 %hook CSTeachableMomentsContainerView
-- (void)_layoutControlCenterGrabberAndGlyph  {
+- (void)_layoutControlCenterGrabberAndGlyph {
     %orig;
     if (statusBarStyle == 2) {
-        self.controlCenterGrabberEffectContainerView.frame = CGRectMake(self.frame.size.width - 73,40,46,2.5);
-        self.controlCenterGrabberView.frame = CGRectMake(0,0,46,2.5);
-        self.controlCenterGlyphView.frame = CGRectMake(315,50,16.6,19.3);
+        self.controlCenterGrabberEffectContainerView.frame = CGRectMake(self.frame.size.width - 73, 40, 46, 2.5);
+        self.controlCenterGrabberView.frame = CGRectMake(0, 0, 46, 2.5);
+        self.controlCenterGlyphView.frame = CGRectMake(315, 50, 16.6, 19.3);
     } else {
-        self.controlCenterGrabberEffectContainerView.frame = CGRectMake(self.frame.size.width - 75.5,24,60.5,2.5);
-        self.controlCenterGrabberView.frame = CGRectMake(0,0,60.5,2.5);
-        self.controlCenterGlyphView.frame = CGRectMake(320,35,16.6,19.3);
+        self.controlCenterGrabberEffectContainerView.frame = CGRectMake(self.frame.size.width - 75.5, 24, 60.5, 2.5);
+        self.controlCenterGrabberView.frame = CGRectMake(0, 0, 60.5, 2.5);
+        self.controlCenterGlyphView.frame = CGRectMake(320, 35, 16.6, 19.3);
     }
 }
 %end
@@ -260,21 +317,19 @@ BOOL noBreadCrumbs;
 %end
 %end
 
-// Allows you to use the non-X iPhone button combinations. For some reason only works on some devices - Just as the iPhone X Combinations
 %group originalButtons
 %hook SBLockHardwareButtonActions
 - (id)initWithHomeButtonType:(long long)arg1 proximitySensorManager:(id)arg2 {
     return %orig(1, arg2);
 }
 %end
-
 %hook SBHomeHardwareButtonActions
 - (id)initWitHomeButtonType:(long long)arg1 {
     return %orig(1);
 }
 %end
 
-int applicationDidFinishLaunching = 2;
+static int applicationDidFinishLaunching = 2;
 
 %hook SBPressGestureRecognizer
 - (void)setAllowedPressTypes:(NSArray *)arg1 {
@@ -301,41 +356,31 @@ int applicationDidFinishLaunching = 2;
 
 %hook SBHomeHardwareButton
 - (id)initWithScreenshotGestureRecognizer:(id)arg1 homeButtonType:(long long)arg2 buttonActions:(id)arg3 gestureRecognizerConfiguration:(id)arg4 {
-    return %orig(arg1,1,arg3,arg4);
+    return %orig(arg1, 1, arg3, arg4);
 }
 - (id)initWithScreenshotGestureRecognizer:(id)arg1 homeButtonType:(long long)arg2 {
-    return %orig(arg1,1);
+    return %orig(arg1, 1);
 }
 %end
-
 %hook SBLockHardwareButton
-- (id)initWithScreenshotGestureRecognizer:(id)arg1 shutdownGestureRecognizer:(id)arg2 proximitySensorManager:(id)arg3 homeHardwareButton:(id)arg4 volumeHardwareButton:(id)arg5 buttonActions:(id)arg6 homeButtonType:(long long)arg7 createGestures:(_Bool)arg8 {
-    return %orig(arg1,arg2,arg3,arg4,arg5,arg6,1,arg8);
+- (id)initWithScreenshotGestureRecognizer:(id)arg1 shutdownGestureRecognizer:(id)arg2 proximitySensorManager:(id)arg3 homeHardwareButton:(id)arg4 volumeHardwareButton:(id)arg5 buttonActions:(id)arg6 homeButtonType:(long long)arg7 createGestures:(BOOL)arg8 {
+    return %orig(arg1, arg2, arg3, arg4, arg5, arg6, 1, arg8);
 }
 - (id)initWithScreenshotGestureRecognizer:(id)arg1 shutdownGestureRecognizer:(id)arg2 proximitySensorManager:(id)arg3 homeHardwareButton:(id)arg4 volumeHardwareButton:(id)arg5 homeButtonType:(long long)arg6 {
-    return %orig(arg1,arg2,arg3,arg4,arg5,1);
+    return %orig(arg1, arg2, arg3, arg4, arg5, 1);
 }
 %end
-
 %hook SBVolumeHardwareButton
 - (id)initWithScreenshotGestureRecognizer:(id)arg1 shutdownGestureRecognizer:(id)arg2 homeButtonType:(long long)arg3 {
-    return %orig(arg1,arg2,1);
+    return %orig(arg1, arg2, 1);
 }
 %end
 %end
 
 %group roundedCorners
-
-@interface _UIRootWindow : UIView
-@property (setter=_setContinuousCornerRadius:, nonatomic) double _continuousCornerRadius;
-@end
-
 %hook _UIRootWindow
--(void)layoutSubviews {
-    %orig;
-    self.clipsToBounds = YES;
-    self._continuousCornerRadius = screenRoundness;
-    return;
+- (void)_setContinuousCornerRadius:(double)radius {
+    %orig(screenRoundness);
 }
 %end
 
@@ -344,7 +389,7 @@ int applicationDidFinishLaunching = 2;
     return screenRoundness;
 }
 %end
-%end 
+%end
 
 %group ProudLock
 %hook SBUIPasscodeBiometricResource
@@ -372,46 +417,36 @@ CGFloat offset = 0;
 
 %hook SBFLockScreenDateView
 -(id)initWithFrame:(CGRect)arg1 {
-    CGFloat const screenWidth = UIScreen.mainScreen.bounds.size.width;
-
-	if (screenWidth <= 320) {
-		offset = 20;
-	} else if (screenWidth <= 375) {
-		offset = 25;
-	}
-
+    CGFloat screenWidth = UIScreen.mainScreen.bounds.size.width;
+    if (screenWidth <= 320) offset = 20;
+    else if (screenWidth <= 375) offset = 25;
     return %orig;
 }
 - (void)layoutSubviews {
-	%orig;
-
-	UIView* timeView = MSHookIvar<UIView*>(self, "_timeLabel");
-	UIView* dateSubtitleView = MSHookIvar<UIView*>(self, "_dateSubtitleView");
-	UIView* customSubtitleView = MSHookIvar<UIView*>(self, "_customSubtitleView");
-	
-	[timeView setFrame:CGRectSetY(timeView.frame, timeView.frame.origin.y + offset)];
-	[dateSubtitleView setFrame:CGRectSetY(dateSubtitleView.frame, dateSubtitleView.frame.origin.y + offset)];
-	[customSubtitleView setFrame:CGRectSetY(customSubtitleView.frame, customSubtitleView.frame.origin.y + offset)];
+    %orig;
+    UIView *timeView = MSHookIvar<UIView*>(self, "_timeLabel");
+    UIView *dateSubtitleView = MSHookIvar<UIView*>(self, "_dateSubtitleView");
+    UIView *customSubtitleView = MSHookIvar<UIView*>(self, "_customSubtitleView");
+    timeView.frame = CGRectSetY(timeView.frame, timeView.frame.origin.y + offset);
+    dateSubtitleView.frame = CGRectSetY(dateSubtitleView.frame, dateSubtitleView.frame.origin.y + offset);
+    customSubtitleView.frame = CGRectSetY(customSubtitleView.frame, customSubtitleView.frame.origin.y + offset);
 }
 %end
 
 %hook SBDashBoardLockScreenEnvironment
 - (void)handleBiometricEvent:(unsigned long long)arg1 {
-	%orig;
-
-	if (arg1 == 4) {
-		SBDashBoardBiometricUnlockController* biometricUnlockController = MSHookIvar<SBDashBoardBiometricUnlockController*>(self, "_biometricUnlockController");
-		SBDashBoardMesaUnlockBehaviorConfiguration* unlockBehavior = MSHookIvar<SBDashBoardMesaUnlockBehaviorConfiguration*>(biometricUnlockController, "_biometricUnlockBehaviorConfiguration");
-		
-		if ([unlockBehavior _isAccessibilityRestingUnlockPreferenceEnabled]) {
-			dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-				[[%c(SBLockScreenManager) sharedInstance] _finishUIUnlockFromSource:12 withOptions:nil];
-			});
-		}
-	}
+    %orig;
+    if (arg1 == 4) {
+        SBDashBoardBiometricUnlockController *controller = MSHookIvar<SBDashBoardBiometricUnlockController*>(self, "_biometricUnlockController");
+        SBDashBoardMesaUnlockBehaviorConfiguration *behavior = MSHookIvar<SBDashBoardMesaUnlockBehaviorConfiguration*>(controller, "_biometricUnlockBehaviorConfiguration");
+        if ([behavior _isAccessibilityRestingUnlockPreferenceEnabled]) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [[%c(SBLockScreenManager) sharedInstance] _finishUIUnlockFromSource:12 withOptions:nil];
+            });
+        }
+    }
 }
 %end
-
 
 %hook SBUIProudLockIconView
 - (void)setFrame:(CGRect)frame {
@@ -421,21 +456,18 @@ CGFloat offset = 0;
 
 %hook CSCombinedListViewController
 - (UIEdgeInsets)_listViewDefaultContentInsets {
-    UIEdgeInsets orig = %orig;
-
-    orig.top += offset;
-    return orig;
+    UIEdgeInsets insets = %orig;
+    insets.top += offset;
+    return insets;
 }
 %end
 
 %hook SBUIBiometricResource
 - (id)init {
-	id r = %orig;
-
-	MSHookIvar<BOOL>(r, "_hasMesaHardware") = NO;
-	MSHookIvar<BOOL>(r, "_hasPearlHardware") = YES;
-	
-	return r;
+    id obj = %orig;
+    MSHookIvar<BOOL>(obj, "_hasMesaHardware") = NO;
+    MSHookIvar<BOOL>(obj, "_hasPearlHardware") = YES;
+    return obj;
 }
 %end
 
@@ -445,7 +477,7 @@ CGFloat offset = 0;
 %hook WGWidgetGroupViewController
 - (void)updateViewConstraints {
     %orig;
-	[self.view setFrame:CGRectSetY(self.view.frame, self.view.frame.origin.y + (offset/2))];
+    self.view.frame = CGRectSetY(self.view.frame, self.view.frame.origin.y + (offset/2));
 }
 %end
 %end
@@ -453,7 +485,7 @@ CGFloat offset = 0;
 %group iPadDock
 %hook SBFloatingDockController
 + (BOOL)isFloatingDockSupported {
-	return YES;
+    return YES;
 }
 %end
 %end
@@ -475,25 +507,21 @@ CGFloat offset = 0;
 %end
 
 %group iPadMultitasking
-
 %hook SBApplication
 - (BOOL)isMedusaCapable {
     return YES;
 }
 %end
-
 %hook SBPlatformController
 -(long long)medusaCapabilities {
-	return 2;
+    return 2;
 }
 %end
-
 %hook SBMainWorkspace
 -(BOOL)isMedusaEnabled {
-	return YES;
+    return YES;
 }
 %end
-
 %hook SBApplicationInfo
 -(BOOL)supportsMultiwindow {
     return YES;
@@ -501,14 +529,10 @@ CGFloat offset = 0;
 %end
 %end
 
-// Preferences.
 void loadPrefs() {
-     @autoreleasepool {
-
-        #define path @"/var/mobile/Library/Preferences/com.ryannair05.little12.plist"
-
-        NSDictionary const *prefs = [[NSDictionary alloc] initWithContentsOfFile:path];
-
+    @autoreleasepool {
+        NSString *path = @"/var/mobile/Library/Preferences/com.ryannair05.little12.plist";
+        NSDictionary *prefs = [[NSDictionary alloc] initWithContentsOfFile:path];
         if (prefs) {
             enabled = [[prefs objectForKey:@"enabled"] boolValue];
             statusBarStyle = [[prefs objectForKey:@"statusBarStyle"] integerValue];
@@ -516,15 +540,14 @@ void loadPrefs() {
             appswitcherRoundness = [[prefs objectForKey:@"appswitcherRoundness"] integerValue];
             wantsHomeBarSB = [[prefs objectForKey:@"homeBarSB"] boolValue];
             wantsHomeBarLS = [[prefs objectForKey:@"homeBarLS"] boolValue];
-            if ([[prefs objectForKey:@"roundedAppSwitcher"] boolValue] == false) {
+            if ([[prefs objectForKey:@"roundedAppSwitcher"] boolValue] == NO)
                 appswitcherRoundness = 0;
-            }
-            wantsReduceRows =  [[prefs objectForKey:@"reduceRows"] boolValue];
+            wantsReduceRows = [[prefs objectForKey:@"reduceRows"] boolValue];
             wantsCCGrabber = [[prefs objectForKey:@"ccGrabber"] boolValue];
             wantsBatteryPercent = [[prefs objectForKey:@"batteryPercent"] boolValue];
             wantsiPadDock = [[prefs objectForKey:@"iPadDock"] boolValue];
             wantsiPadMultitasking = wantsiPadDock ? [[prefs objectForKey:@"iPadMultitasking"] boolValue] : NO;
-            wantsXButtons =  [[prefs objectForKey:@"xButtons"] boolValue];
+            wantsXButtons = [[prefs objectForKey:@"xButtons"] boolValue];
             wantsDockInApps = [[prefs objectForKey:@"dockInApps"] boolValue];
             wantsDockInSwitcher = [[prefs objectForKey:@"dockInSwitcher"] boolValue];
             wantsRoundedCorners = [[prefs objectForKey:@"roundedCorners"] boolValue];
@@ -536,21 +559,16 @@ void loadPrefs() {
             wantsHideSBCC = [[prefs objectForKey:@"HideSBCC"] boolValue];
             wantsLSShortcuts = [[prefs objectForKey:@"lsShortcutsEnabled"] boolValue];
             noBreadCrumbs = [[prefs objectForKey:@"noBreadCrumbs"] boolValue];
-        }
-        else {
-            NSString *pathDefault = @"/Library/PreferenceBundles/little12prefs.bundle/defaults.plist";
-            NSFileManager *fileManager = [NSFileManager defaultManager];
-
-            if (![fileManager fileExistsAtPath:path]) {
+        } else {
+            NSString *defaultPath = @"/Library/PreferenceBundles/little12prefs.bundle/defaults.plist";
+            if ([[NSFileManager defaultManager] fileExistsAtPath:defaultPath]) {
                 NSError *error = nil;
-                [fileManager copyItemAtPath:pathDefault toPath:path error:&error];
-                if (error != nil) {
-                    error = nil;
-                    [[NSFileManager defaultManager] removeItemAtPath:path error:&error];
-                }
-                if (error == nil) {
+                [[NSFileManager defaultManager] copyItemAtPath:defaultPath toPath:path error:&error];
+                if (error) {
+                    [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+                } else {
                     loadPrefs();
-			    }
+                }
             }
         }
     }
@@ -558,46 +576,50 @@ void loadPrefs() {
 
 %ctor {
     @autoreleasepool {
-
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL, (CFNotificationCallback)loadPrefs, CFSTR("com.ryannair05.little12prefs/prefsupdated"), NULL, CFNotificationSuspensionBehaviorCoalesce);
         loadPrefs();
         
         if (enabled) {
-
             if (statusBarStyle == 1) %init(StatusBariPad);
             else if (statusBarStyle > 1) {
-                if (statusBarStyle == 3)
+                if (statusBarStyle == 4) {
+                    %init(StatusBarDynamicSplit);
+                    
+                } else if (statusBarStyle == 3) {
                     %init(StatusBarXSpacing);
-                else 
+                } else { // statusBarStyle == 2
                     %init(StatusBarX);
+                }
+            } else {
+                %init(defaultStatusBar);
             }
-            else %init(defaultStatusBar);
             
             if (!wantsHomeBarLS) {
                 %init(hideHomeBarLS);
                 if (!wantsHomeBarSB) %init(completelyRemoveHomeBar);
             }
-
+            
             if (wantsCCGrabber) %init(ccGrabber);
             if (wantsBatteryPercent) %init(batteryPercent);
             if (!wantsXButtons) %init(originalButtons);
             if (wantsHideSBCC) %init(HideSBCC);
-            else if (statusBarStyle == 0) %init(DefaultSBCC)
-            if (!wantsDockInSwitcher) %init(noDockInAppSwitcher)
+            else if (statusBarStyle == 0) %init(DefaultSBCC);
+            if (!wantsDockInSwitcher) %init(noDockInAppSwitcher);
             if (wantsRoundedCorners) %init(roundedCorners);
+            
             if (wantsiPadDock) {
                 %init(iPadDock);
-                if (!wantsRecentApps)  %init (noRecentApps);
-                if (numberOfRecentApps != 3) %init(customNumRecentApps)
+                if (!wantsRecentApps) %init(noRecentApps);
+                if (numberOfRecentApps != 3) %init(customNumRecentApps);
                 if (iPadDockNumIcons != 4) %init(customNumDockIcons);
-            } 
+            }
             
-            if (wantsiPadMultitasking) %init(iPadMultitasking)
+            if (wantsiPadMultitasking) %init(iPadMultitasking);
             if (wantsProudLock) %init(ProudLock);
-            if (wantsiPadAppSwitcher) %init(iPadAppSwitcher)
+            if (wantsiPadAppSwitcher) %init(iPadAppSwitcher);
             if (!wantsDockInApps) %init(noDockInApps);
-            if (noBreadCrumbs) %init(removeBreadcrumbs)
-
+            if (noBreadCrumbs) %init(removeBreadcrumbs);
+            
             %init;
         }
     }

@@ -2,9 +2,9 @@ Package: com.ryannair05.little12
 Name: Little12
 Depends: mobilesubstrate, preferenceloader, firmware (>= 11.0)
 Version: 1.0.1
-Architecture: iphoneos-arm
-Description: iPhone 12 gestures and more for iOS 14
-Maintainer: Ryan Nair
+Architecture: iphoneos-arm64
+Description: iPhone 12 gestures and more for iOS 15 or 16
+Maintainer: LF
 Author: Ryan Nair
 Section: Tweaks
 Replaces: com.binksalex.fluidify, com.hius.halfipad, com.VitaTaf.HomeGesture, com.ioscreatix.littlex, com.ryannair05.little11

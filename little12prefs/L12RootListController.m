@@ -1,12 +1,12 @@
 #include "L12RootListController.h"
+#include <dlfcn.h>
 
 #if __cplusplus
 extern "C" {
 #endif
-
-    CFSetRef SBSCopyDisplayIdentifiers();
-    NSString * SBSCopyLocalizedApplicationNameForDisplayIdentifier(NSString *identifier);
-
+    // Private API function pointers
+    CFSetRef (*SBSCopyDisplayIdentifiersPtr)();
+    NSString* (*SBSCopyLocalizedApplicationNameForDisplayIdentifierPtr)(NSString *identifier);
 #if __cplusplus
 }
 #endif
@@ -21,9 +21,20 @@ OBWelcomeController *welcomeController;
 
 @synthesize respringButton;
 
++ (void)load {
+    void *handle = dlopen("/System/Library/PrivateFrameworks/SpringBoardServices.framework/SpringBoardServices", RTLD_LAZY);
+    if (handle) {
+        SBSCopyDisplayIdentifiersPtr = dlsym(handle, "SBSCopyDisplayIdentifiers");
+        SBSCopyLocalizedApplicationNameForDisplayIdentifierPtr = dlsym(handle, "SBSCopyLocalizedApplicationNameForDisplayIdentifier");
+    }
+}
+
+- (NSString *)bundlePath {
+    return [[NSBundle bundleForClass:self.class] resourcePath];
+}
+
 - (instancetype)init {
     self = [super init];
-
     if (self) {
         self.respringButton = [[UIBarButtonItem alloc] initWithTitle:@"Respring"
                                     style:UIBarButtonItemStylePlain
@@ -39,7 +50,8 @@ OBWelcomeController *welcomeController;
     
         self.iconView = [[UIImageView alloc] initWithFrame:CGRectMake(0,0,10,10)];
         self.iconView.contentMode = UIViewContentModeScaleAspectFit;
-        self.iconView.image = [UIImage imageWithContentsOfFile:@"/Library/PreferenceBundles/little12prefs.bundle/icon@3x.png"];
+        NSString *iconPath = [[self bundlePath] stringByAppendingPathComponent:@"icon@3x.png"];
+        self.iconView.image = [UIImage imageWithContentsOfFile:iconPath];
         self.iconView.translatesAutoresizingMaskIntoConstraints = NO;
         self.iconView.alpha = 0.0;
         [self.navigationItem.titleView addSubview:self.iconView];
@@ -47,7 +59,8 @@ OBWelcomeController *welcomeController;
         self.headerView = [[UIView alloc] initWithFrame:CGRectMake(0,0,200,200)];
         UIImageView *headerImageView = [[UIImageView alloc] initWithFrame:CGRectMake(0,0,200,200)];
         headerImageView.contentMode = UIViewContentModeScaleAspectFill;
-        headerImageView.image = [UIImage imageWithContentsOfFile:@"/Library/PreferenceBundles/little12prefs.bundle/Banner.png"];
+        NSString *bannerPath = [[self bundlePath] stringByAppendingPathComponent:@"Banner.png"];
+        headerImageView.image = [UIImage imageWithContentsOfFile:bannerPath];
         headerImageView.translatesAutoresizingMaskIntoConstraints = NO;
         [self.headerView addSubview:headerImageView];
     
@@ -66,13 +79,11 @@ OBWelcomeController *welcomeController;
             [headerImageView.bottomAnchor constraintEqualToAnchor:self.headerView.bottomAnchor],
         ]];
     }
-
     return self;
 }
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView {
     CGFloat const offsetY = scrollView.contentOffset.y;
-
     if (offsetY > 500) {
         [UIView animateWithDuration:0.2 animations:^{
             self.iconView.alpha = 1.0;
@@ -87,40 +98,46 @@ OBWelcomeController *welcomeController;
 }
 
 - (NSArray *)specifiers {
-
-	if (_specifiers == nil) {
-		NSMutableArray *testingSpecs = [[self loadSpecifiersFromPlistName:@"Root" target:self] mutableCopy];
-                
+    if (_specifiers == nil) {
+        NSMutableArray *testingSpecs = [[self loadSpecifiersFromPlistName:@"Root" target:self] mutableCopy];
         [testingSpecs addObjectsFromArray:[self appSpecifiers]];
-        
         _specifiers = testingSpecs;
-
         self.savedSpecifiers = [[NSMutableDictionary alloc] init];
-        
         for (PSSpecifier *specifier in [self specifiers]) {
-			if ([specifier propertyForKey:@"id"]) {
-				[self.savedSpecifiers setObject:specifier forKey:[specifier propertyForKey:@"id"]];
-		    }
-		}
+            if ([specifier propertyForKey:@"id"]) {
+                [self.savedSpecifiers setObject:specifier forKey:[specifier propertyForKey:@"id"]];
+            }
+        }
 
         NSDictionary const *prefs = [[NSDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/com.ryannair05.little12.plist"];
-
-        BOOL firstTime;
-
-        if ([prefs objectForKey:@"firstTime"]) {
-            firstTime = [[prefs objectForKey:@"firstTime"] boolValue];
-        }
-        else
-            firstTime = YES;
+        BOOL firstTime = !prefs[@"firstTime"] ? YES : [prefs[@"firstTime"] boolValue];
             
-        if (firstTime) {
-
-            welcomeController = [[OBWelcomeController alloc] initWithTitle:@"Welcome to Little12" detailText:@"Little12 Brings iPhone 12 Gestures and Features to all devices!" icon:[UIImage systemImageNamed:@"gear"]];
-
-            [welcomeController addBulletedListItemWithTitle:@"The Tweak" description:@"The iPhone X Gestures should be available on all devices, and so Little12 brings these fluid gestures to your device." image:[UIImage systemImageNamed:@"1.circle.fill"]];
-            [welcomeController addBulletedListItemWithTitle:@"App Support" description:@"The majority of apps work with Little12 without an issue. For the exceptions, I'm doing my best to fix them though sometimes it can prove to be a challenge. Turning on or off the compatibility mode and/or device spoofing settings may improve or worsen certain apps. " image:[UIImage systemImageNamed:@"2.circle.fill"]];
-            [welcomeController addBulletedListItemWithTitle:@"Support" description:@"Little12 is made to be the best possible, but there are still some issues unfortunately. To report issues and for support I can be contacted over Email, Discord, Twitter, Reddit, and Github." image:[UIImage systemImageNamed:@"3.circle.fill"]];
-            [welcomeController addBulletedListItemWithTitle:@"Open Source" description:@"Little12 is open source and can be found on Github. Feel free to check out the code anytime and even make a pull request." image:[UIImage systemImageNamed:@"4.circle.fill"]];
+        if (firstTime && NSClassFromString(@"OBWelcomeController")) {
+            UIImage *gearIcon = nil;
+            if (@available(iOS 13.0, *)) {
+                gearIcon = [UIImage systemImageNamed:@"gear"];
+            } else {
+                gearIcon = [UIImage imageNamed:@"gear.png"];
+            }
+            welcomeController = [[OBWelcomeController alloc] initWithTitle:@"Welcome to Little12" detailText:@"Little12 Brings iPhone 12 Gestures and Features to all devices!" icon:gearIcon];
+            
+            NSArray *titles = @[@"The Tweak", @"App Support", @"Support", @"Open Source"];
+            NSArray *descriptions = @[
+                @"The iPhone X Gestures should be available on all devices, and so Little12 brings these fluid gestures to your device.",
+                @"The majority of apps work with Little12 without an issue. For the exceptions, I'm doing my best to fix them though sometimes it can prove to be a challenge. Turning on or off the compatibility mode and/or device spoofing settings may improve or worsen certain apps.",
+                @"Little12 is made to be the best possible, but there are still some issues unfortunately. To report issues and for support I can be contacted over Email, Discord, Twitter, Reddit, and Github.",
+                @"Little12 is open source and can be found on Github. Feel free to check out the code anytime and even make a pull request."
+            ];
+            NSArray *imageNames = @[@"1.circle.fill", @"2.circle.fill", @"3.circle.fill", @"4.circle.fill"];
+            for (NSInteger i = 0; i < titles.count; i++) {
+                UIImage *img = nil;
+                if (@available(iOS 13.0, *)) {
+                    img = [UIImage systemImageNamed:imageNames[i]];
+                } else {
+                    img = [UIImage imageNamed:[imageNames[i] stringByReplacingOccurrencesOfString:@"." withString:@"_"]];
+                }
+                [welcomeController addBulletedListItemWithTitle:titles[i] description:descriptions[i] image:img];
+            }
 
             OBBoldTrayButton* continueButton = [OBBoldTrayButton buttonWithType:1];
             [continueButton addTarget:self action:@selector(dismissWelcomeController) forControlEvents:UIControlEventTouchUpInside];
@@ -130,48 +147,46 @@ OBWelcomeController *welcomeController;
             [continueButton.layer setCornerRadius:19]; 
             [welcomeController.buttonTray addButton:continueButton];
             
-            welcomeController.buttonTray.effectView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial];
-            
-            UIVisualEffectView *effectWelcomeView = [[UIVisualEffectView alloc] initWithFrame:welcomeController.viewIfLoaded.bounds];
-            
-            effectWelcomeView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial];
-            
-            [welcomeController.viewIfLoaded insertSubview:effectWelcomeView atIndex:0];       
-
+            if (@available(iOS 13.0, *)) {
+                welcomeController.buttonTray.effectView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial];
+                UIVisualEffectView *effectWelcomeView = [[UIVisualEffectView alloc] initWithFrame:welcomeController.viewIfLoaded.bounds];
+                effectWelcomeView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterial];
+                [welcomeController.viewIfLoaded insertSubview:effectWelcomeView atIndex:0];
+            } else {
+                welcomeController.buttonTray.effectView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+                UIVisualEffectView *effectWelcomeView = [[UIVisualEffectView alloc] initWithFrame:welcomeController.viewIfLoaded.bounds];
+                effectWelcomeView.effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+                [welcomeController.viewIfLoaded insertSubview:effectWelcomeView atIndex:0];
+            }
             welcomeController.viewIfLoaded.backgroundColor = [UIColor clearColor];
-
             [welcomeController.buttonTray addCaptionText:@"Thank you for your using Little12!"];
-
             welcomeController.modalPresentationStyle = UIModalPresentationPageSheet;
-            welcomeController.modalInPresentation = YES;
+            if (@available(iOS 13.0, *)) {
+                welcomeController.modalInPresentation = YES;
+            }
             welcomeController.view.tintColor = [UIColor systemBlueColor];
             [self presentViewController:welcomeController animated:YES completion:nil];
         }
     }
-	return _specifiers;
+    return _specifiers;
 }
 
 -(void)dismissWelcomeController { 
     [welcomeController dismissViewControllerAnimated:YES completion:nil];
-    
     NSMutableDictionary const *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/com.ryannair05.little12.plist"];
-
     [prefs setValue:[NSNumber numberWithBool:NO] forKey:@"firstTime"]; 
-
     [prefs writeToFile:@"/var/mobile/Library/Preferences/com.ryannair05.little12.plist" atomically:YES]; 
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    [[UISwitch appearanceWhenContainedInInstancesOfClasses:@[self.class]] setOnTintColor:[UIColor colorWithRed: 0.00 green: 0.51 blue: 1.00 alpha: 1.00]];
-    [[UISlider appearanceWhenContainedInInstancesOfClasses:@[self.class]] setTintColor:[UIColor colorWithRed: 0.00 green: 0.51 blue: 1.00 alpha: 1.00]];
+    [[UISwitch appearanceWhenContainedInInstancesOfClasses:@[self.class]] setOnTintColor:[UIColor colorWithRed:0.00 green:0.51 blue:1.00 alpha:1.00]];
+    [[UISlider appearanceWhenContainedInInstancesOfClasses:@[self.class]] setTintColor:[UIColor colorWithRed:0.00 green:0.51 blue:1.00 alpha:1.00]];
 }    
 
 -(void)viewDidLoad {
     [super viewDidLoad];
-
     NSDictionary *prefs = [[NSDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/com.ryannair05.little12.plist"];
-
     BOOL hasStatusBarOrInset = NO;
     
     if (([[prefs objectForKey:@"iPadDock"] boolValue]) == 0) {
@@ -215,10 +230,6 @@ OBWelcomeController *welcomeController;
     else if (([[prefs objectForKey:@"keyboardDock"] boolValue]) == 0) {
         [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"keyboardSpacing"]] animated:NO];
     }
-
-    // if (([[prefs objectForKey:@"recApponDock"] boolValue]) == 0) {
-    //     [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"numRecAppsonDock"]] animated:NO];
-    // }
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -228,9 +239,7 @@ OBWelcomeController *welcomeController;
 
 -(void)reloadSpecifiers {
     [super reloadSpecifiers];
-
     NSDictionary *prefs = [[NSDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/com.ryannair05.little12.plist"];
-
     BOOL hasStatusBarOrInset = NO;
     
     if (([[prefs objectForKey:@"iPadDock"] boolValue]) == 0) {
@@ -241,15 +250,11 @@ OBWelcomeController *welcomeController;
         [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"dockInApps"]] animated:NO];
         [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"dockInSwitcher"]] animated:NO];
         [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"recApponDock"]] animated:NO];
-        // [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"roundedAppSwitcherNoDock"]] animated:NO];
     }
     else if (([[prefs objectForKey:@"recApponDock"] boolValue]) == 0) {
         [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"numRecAppsonDock"]] animated:NO];
     }
 
-    // if (([[prefs objectForKey:@"statusBarStyle"] integerValue]) == 0) {
-    //     [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"HideSBCC"]] animated:NO];
-    // }
     if  (([[prefs objectForKey:@"statusBarStyle"] integerValue]) > 1) {
         hasStatusBarOrInset = YES;
     }
@@ -275,23 +280,20 @@ OBWelcomeController *welcomeController;
         [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"keyboardSpacing"]] animated:NO];
         [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"noGesturesForKeyboard"]] animated:NO];
     }
-
     else if (([[prefs objectForKey:@"keyboardDock"] boolValue]) == 0) {
         [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"keyboardSpacing"]] animated:NO];
     }
-
-    // [[_specifiers specifierForID:@"keyboardDock"] setProperty:@NO forKey:@"enabled"];
-
 }
 
 -(NSMutableArray*)appSpecifiers {
     NSMutableArray *specifiers = [NSMutableArray array];
-
-    NSArray *displayIdentifiers = [(__bridge NSSet *)SBSCopyDisplayIdentifiers() allObjects];
-
+    if (!SBSCopyDisplayIdentifiersPtr || !SBSCopyLocalizedApplicationNameForDisplayIdentifierPtr) {
+        return specifiers;
+    }
+    NSArray *displayIdentifiers = [(__bridge NSSet *)SBSCopyDisplayIdentifiersPtr() allObjects];
     NSMutableDictionary *apps = [NSMutableDictionary new];
     for (NSString *appIdentifier in displayIdentifiers) {
-        NSString *appName = SBSCopyLocalizedApplicationNameForDisplayIdentifier(appIdentifier);
+        NSString *appName = SBSCopyLocalizedApplicationNameForDisplayIdentifierPtr(appIdentifier);
         if (appName) {
             [apps setObject:appName forKey:appIdentifier];
         }
@@ -305,7 +307,6 @@ OBWelcomeController *welcomeController;
     
     for (NSString *bundleIdentifier in dataSourceUser.allKeys) {
         NSString *displayName = dataSourceUser[bundleIdentifier];
-        
         PSSpecifier *spe = [PSSpecifier preferenceSpecifierNamed:displayName target:self set:nil get:@selector(getIsWidgetSetForSpecifier:) detail:[L12AppSettingsController class] cell:PSLinkListCell edit:nil];
         [spe setProperty:@"IBKWidgetSettingsController" forKey:@"detail"];
         [spe setProperty:@YES forKey:@"isController"];
@@ -313,20 +314,14 @@ OBWelcomeController *welcomeController;
         [spe setProperty:bundleIdentifier forKey:@"bundleIdentifier"];
         [spe setProperty:bundleIdentifier forKey:@"appIDForLazyIcon"];
         [spe setProperty:@YES forKey:@"useLazyIcons"];
-        
         [specifiers addObject:spe];
     }
-    
     return specifiers;
 }
 
 -(OrderedDictionary*)trimDataSource:(OrderedDictionary*)dataSource {
     OrderedDictionary *mutable = [dataSource mutableCopy];
-    
-    NSArray *bannedIdentifiers = [[NSArray alloc] initWithObjects:
-                                  @"com.apple.sidecar",
-                                  nil];
-
+    NSArray *bannedIdentifiers = [[NSArray alloc] initWithObjects:@"com.apple.sidecar", nil];
     for (NSString *key in bannedIdentifiers) {
         [mutable removeObjectForKey:key];
     }
@@ -336,45 +331,37 @@ OBWelcomeController *welcomeController;
 -(OrderedDictionary*)sortedDictionary:(OrderedDictionary*)dict {
     NSArray *sortedValues;
     OrderedDictionary *mutable = [OrderedDictionary dictionary];
-    
     sortedValues = [[dict allValues] sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
-    
     for (NSString *value in sortedValues) {
-        // Get key for value.
         NSString const *key = [[dict allKeysForObject:value] objectAtIndex:0];
-        
         [mutable setObject:value forKey:key];
     }
-    
     return mutable;
 }
 
 - (id)readPreferenceValue:(PSSpecifier*)specifier {
-  NSString *path = [NSString stringWithFormat:@"/var/mobile/Library/Preferences/%@.plist", specifier.properties[@"defaults"]];
-  NSMutableDictionary *settings = [NSMutableDictionary dictionary];
-  [settings addEntriesFromDictionary:[NSDictionary dictionaryWithContentsOfFile:path]];
-
-  return ([settings objectForKey:specifier.properties[@"key"]]) ?: specifier.properties[@"default"];
+    NSString *path = [NSString stringWithFormat:@"/var/mobile/Library/Preferences/%@.plist", specifier.properties[@"defaults"]];
+    NSMutableDictionary *settings = [NSMutableDictionary dictionary];
+    [settings addEntriesFromDictionary:[NSDictionary dictionaryWithContentsOfFile:path]];
+    return ([settings objectForKey:specifier.properties[@"key"]]) ?: specifier.properties[@"default"];
 }
 
 - (void)setPreferenceValue:(id)value specifier:(PSSpecifier*)specifier {
-  NSString *path = [NSString stringWithFormat:@"/var/mobile/Library/Preferences/%@.plist", specifier.properties[@"defaults"]];
-  NSMutableDictionary *settings = [NSMutableDictionary dictionary];
-  [settings addEntriesFromDictionary:[NSDictionary dictionaryWithContentsOfFile:path]];
+    NSString *path = [NSString stringWithFormat:@"/var/mobile/Library/Preferences/%@.plist", specifier.properties[@"defaults"]];
+    NSMutableDictionary *settings = [NSMutableDictionary dictionary];
+    [settings addEntriesFromDictionary:[NSDictionary dictionaryWithContentsOfFile:path]];
+    [settings setObject:value forKey:specifier.properties[@"key"]];
+    [settings writeToFile:path atomically:YES];
+    CFStringRef notificationName = (__bridge CFStringRef)specifier.properties[@"PostNotification"];
+    if (notificationName) {
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), notificationName, NULL, NULL, YES);
+    }
 
-  [settings setObject:value forKey:specifier.properties[@"key"]];
-  [settings writeToFile:path atomically:YES];
-  CFStringRef notificationName = (__bridge CFStringRef)specifier.properties[@"PostNotification"];
-  if (notificationName) {
-   CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), notificationName, NULL, NULL, YES);
-  }
+    NSString const *key = [specifier propertyForKey:@"key"];
+    NSDictionary *prefs = [[NSDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/com.ryannair05.little12.plist"];
 
-  NSString const *key = [specifier propertyForKey:@"key"];
-    
-  NSDictionary *prefs = [[NSDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/com.ryannair05.little12.plist"];
-
-  if ([key isEqualToString:@"iPadDock"]) {
-      if ([value boolValue] == false) {
+    if ([key isEqualToString:@"iPadDock"]) {
+        if ([value boolValue] == false) {
             [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"iPadMultitasking"]] animated:YES];
             [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"iPadDockNumIcons"]] animated:YES];
             [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"numAppsonDock"]] animated:YES];
@@ -382,10 +369,9 @@ OBWelcomeController *welcomeController;
             [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"numRecAppsonDock"]] animated:YES];
             [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"dockInApps"]] animated:YES];
             [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"dockInSwitcher"]] animated:NO];
-      }
-      else  {
+        }
+        else {
             if (![self containsSpecifier:self.savedSpecifiers[@"iPadMultitasking"]]) {
-
                 if (![self containsSpecifier:self.savedSpecifiers[@"iPadDockNumIcons"]]) {
                     [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"iPadDockNumIcons"]] afterSpecifierID:@"iPadSwitcher" animated:YES];
                     [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"numAppsonDock"]] afterSpecifierID:@"iPadDockNumIcons" animated:YES];
@@ -393,24 +379,21 @@ OBWelcomeController *welcomeController;
                     [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"dockInApps"]] afterSpecifierID:@"recApponDock" animated:YES];
                     [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"dockInSwitcher"]] afterSpecifierID:@"dockInApps" animated:YES];
                 }
-
                 if ([[prefs objectForKey:@"recApponDock"] boolValue]) {
                     [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"numRecAppsonDock"]] afterSpecifierID:@"recApponDock" animated:YES];
                 }
-
                 [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"iPadMultitasking"]] afterSpecifierID:@"dockInSwitcher" animated:YES];
+            }
         }
-	}
-  }
-  else if ([key isEqualToString:@"recApponDock"]) {
+    }
+    else if ([key isEqualToString:@"recApponDock"]) {
         if ([value boolValue] == false) {
             [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"numRecAppsonDock"]] animated:YES];
         }
         else if (![self containsSpecifier:self.savedSpecifiers[@"numRecAppsonDock"]]) {
             [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"numRecAppsonDock"]] afterSpecifierID:@"recApponDock" animated:YES];
         }
-
-  }
+    }
     else if ([key isEqualToString:@"keyboardDock"]) {
         if ([value boolValue] == false) {
             [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"keyboardSpacing"]] animated:YES];
@@ -418,30 +401,25 @@ OBWelcomeController *welcomeController;
         else if (![self containsSpecifier:self.savedSpecifiers[@"keyboardSpacing"]]) {
             [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"keyboardSpacing"]] afterSpecifierID:@"keyboardDock" animated:YES];
         }
-
-  }
-   else if ([key isEqualToString:@"roundedAppSwitcher"]) {
-
-      if ([value boolValue] == false) {
-          [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"appswitcherRoundness"]] animated:YES];
-      }
-      else if (![self containsSpecifier:self.savedSpecifiers[@"appswitcherRoundness"]]) {
+    }
+    else if ([key isEqualToString:@"roundedAppSwitcher"]) {
+        if ([value boolValue] == false) {
+            [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"appswitcherRoundness"]] animated:YES];
+        }
+        else if (![self containsSpecifier:self.savedSpecifiers[@"appswitcherRoundness"]]) {
             if ([self containsSpecifier:self.savedSpecifiers[@"roundedAppSwitcher"]])
                 [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"appswitcherRoundness"]] afterSpecifierID:@"roundedAppSwitcher" animated:YES];
             else
                 [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"appswitcherRoundness"]] afterSpecifierID:@"roundedAppSwitcherNoDock" animated:YES];
-	  }
-
+        }
     }
     else if ([key isEqualToString:@"roundedCorners"]) {
-
         if ([value boolValue] == false) {
             [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"screenRoundness"]] animated:YES];
         }
         else if (![self containsSpecifier:self.savedSpecifiers[@"screenRoundness"]]) {
-                [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"screenRoundness"]] afterSpecifierID:@"roundedCorners" animated:YES];
+            [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"screenRoundness"]] afterSpecifierID:@"roundedCorners" animated:YES];
         }
-
     }
     
     if (([[prefs objectForKey:@"statusBarStyle"] integerValue] > 1) || [[prefs objectForKey:@"bottomInset"] boolValue]) {
@@ -450,54 +428,68 @@ OBWelcomeController *welcomeController;
                 [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"compatabilityMode"]] afterSpecifierID:@"screenRoundness" animated:YES];
             else 
                 [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"compatabilityMode"]] afterSpecifierID:@"roundedCorners" animated:YES];
-
             [self insertContiguousSpecifiers:@[self.savedSpecifiers[@"deviceSpoofing"]] afterSpecifierID:@"compatabilityMode" animated:YES];
         }
     }
-
     else {
         [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"compatabilityMode"]] animated:YES];
         [self removeContiguousSpecifiers:@[self.savedSpecifiers[@"deviceSpoofing"]] animated:YES];
     }
 } 
-  
 
 - (void)respring:(id)sender {
-    UIVisualEffectView* blurView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleRegular]];
-    [blurView setFrame:self.view.bounds];
-    [blurView setAlpha:0.0];
-    [[self view] addSubview:blurView];
+
+    UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleRegular]];
+    blurView.frame = self.view.bounds;
+    blurView.alpha = 0.0;
+    [self.view addSubview:blurView];
+    
     [UIView animateWithDuration:0.25 delay:0.0 options:UIViewAnimationOptionCurveEaseOut animations:^{
-        [blurView setAlpha:1.0];
+        blurView.alpha = 1.0;
     } completion:^(BOOL finished) {
+
+        const char *sbreload_path = NULL;
+        if (access("/usr/bin/sbreload", X_OK) == 0) {
+            sbreload_path = "/usr/bin/sbreload";
+        } else if (access("/var/jb/usr/bin/sbreload", X_OK) == 0) {
+            sbreload_path = "/var/jb/usr/bin/sbreload";
+        }
+        
         pid_t pid;
         int status;
-        const char* args[] = {"sbreload", NULL};
-        posix_spawn(&pid, "/usr/bin/sbreload", NULL, NULL, (char* const*)args, NULL);
-        waitpid(pid, &status, WEXITED);
+        
+        if (sbreload_path) {
+            const char* args[] = {sbreload_path, NULL};
+            posix_spawn(&pid, sbreload_path, NULL, NULL, (char* const*)args, NULL);
+            waitpid(pid, &status, 0);
+        } else {
+
+
+            const char* args[] = {"killall", "SpringBoard", NULL};
+            posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, (char* const*)args, NULL);
+            waitpid(pid, &status, 0);
+        }
     }];
 }
 @end
 
 @implementation L12TwitterCell
 
-- (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier specifier:(PSSpecifier *)specifier
-{
+- (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier specifier:(PSSpecifier *)specifier {
     self = [super initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:reuseIdentifier specifier:specifier];
-
     if (self) {
-
         self.selectionStyle = UITableViewCellSelectionStyleBlue;
         self.accessoryView = [[UIImageView alloc] initWithFrame:CGRectMake( 0, 0, 38, 38)];
-
         self.detailTextLabel.numberOfLines = 1;
         self.detailTextLabel.textColor = [UIColor grayColor];
-
         self.textLabel.textColor = [UIColor blackColor];
-        self.tintColor = [UIColor labelColor];
+        if (@available(iOS 13.0, *)) {
+            self.tintColor = [UIColor labelColor];
+        } else {
+            self.tintColor = [UIColor blackColor];
+        }
 
         CGFloat const size = 29.f;
-
         UIGraphicsBeginImageContextWithOptions(CGSizeMake(size, size), NO, [UIScreen mainScreen].scale);
         specifier.properties[@"iconImage"] = UIGraphicsGetImageFromCurrentImageContext();
         UIGraphicsEndImageContext();
@@ -509,8 +501,11 @@ OBWelcomeController *welcomeController;
         _avatarView.clipsToBounds = YES;
         _avatarView.layer.cornerRadius = size / 2;
         _avatarView.layer.borderWidth = 2;
-        _avatarView.layer.borderColor = [[UIColor tertiaryLabelColor] CGColor];
-        
+        if (@available(iOS 13.0, *)) {
+            _avatarView.layer.borderColor = [[UIColor tertiaryLabelColor] CGColor];
+        } else {
+            _avatarView.layer.borderColor = [[UIColor lightGrayColor] CGColor];
+        }
         [self.imageView addSubview:_avatarView];
 
         _avatarImageView = [[UIImageView alloc] initWithFrame:_avatarView.bounds];
@@ -521,85 +516,47 @@ OBWelcomeController *welcomeController;
 
         _user = [specifier.properties[@"accountName"] copy];
         NSAssert(_user, @"User name not provided");
-
         specifier.properties[@"url"] = [self.class _urlForUsername:_user];
-
         self.detailTextLabel.text = _user;
+        if (!_user) return self;
 
-        if (!_user) {
-            return self;
-        }
-
-        // self.avatarImage = [UIImage imageNamed:[NSString stringWithFormat:@"/Library/PreferenceBundles/little11prefs.bundle/%@.png", _user]];
-
-        // This has a delay as image needs to be downloaded
         dispatch_async(dispatch_get_global_queue(0,0), ^{
-            
-            // NSString *size = [UIScreen mainScreen].scale > 2 ? @"original" : @"bigger";
-            NSError __block *err = NULL;
-            NSData __block *data;
-            BOOL __block reqProcessed = false;
-            NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:[NSString stringWithFormat:@"https://pbs.twimg.com/profile_images/1161080936836018176/4GUKuGlb_200x200.jpg"]]];
-            
-            [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData  *_data, NSURLResponse *_response, NSError *_error) {
-                err = _error;
-                data = _data;
-                reqProcessed = true;
-            }] resume];
-
-            while (!reqProcessed) {
-                [NSThread sleepForTimeInterval:0];
-            }
-
-            if (err)
-                return;
-                
-            dispatch_async(dispatch_get_main_queue(), ^{
-                    self.avatarImage = [UIImage imageWithData: data];
-            });
+            NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://pbs.twimg.com/profile_images/1161080936836018176/4GUKuGlb_200x200.jpg"]];
+            NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+                if (data && !error) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        self.avatarImage = [UIImage imageWithData:data];
+                    });
+                }
+            }];
+            [task resume];
         });
     }
-
     return self;
 }
 
-#pragma mark - Avatar
-
-- (void)setAvatarImage:(UIImage *)avatarImage
-{
+- (void)setAvatarImage:(UIImage *)avatarImage {
     _avatarImageView.image = avatarImage;
-
-    if (_avatarImageView.alpha == 0)
-    {
-        [UIView animateWithDuration:0.15
-            animations:^{
-                _avatarImageView.alpha = 1;
-            }
-        ];
+    if (_avatarImageView.alpha == 0) {
+        [UIView animateWithDuration:0.15 animations:^{
+            _avatarImageView.alpha = 1;
+        }];
     }
 }
 
 + (NSURL *)_urlForUsername:(NSString *)user {
-
-/*    if ([[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"aphelion://"]]) {
-        return [NSString stringWithFormat: @"aphelion://profile/%@", user]; // Easter egg by hbkirb
-    } else*/
-     
     if ([[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"tweetbot://"]]) {
-        return [NSURL URLWithString: [@"tweetbot:///user_profile/" stringByAppendingString:user]];
+        return [NSURL URLWithString:[@"tweetbot:///user_profile/" stringByAppendingString:user]];
     } else if ([[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"twitterrific://"]]) {
-        return [NSURL URLWithString: [@"twitterrific:///profile?screen_name=" stringByAppendingString:user]];
+        return [NSURL URLWithString:[@"twitterrific:///profile?screen_name=" stringByAppendingString:user]];
     } else if ([[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"tweetings://"]]) {
-        return [NSURL URLWithString: [@"tweetings:///user?screen_name=" stringByAppendingString:user]];
-    } /*else if ([[UIApplication sharedApplication] canOpenURL:[NSURL URLWithString:@"twitter://"]]) {
-        return [NSURL URLWithString: [@"twitter://user?screen_name=" stringByAppendingString:user]];
-    }*/ else {
-        return [NSURL URLWithString: [@"https://mobile.twitter.com/" stringByAppendingString:user]];
+        return [NSURL URLWithString:[@"tweetings:///user?screen_name=" stringByAppendingString:user]];
+    } else {
+        return [NSURL URLWithString:[@"https://mobile.twitter.com/" stringByAppendingString:user]];
     }
 }
 
-- (void)setSelected:(BOOL)arg1 animated:(BOOL)arg2
-{
+- (void)setSelected:(BOOL)arg1 animated:(BOOL)arg2 {
     if (arg1) [[UIApplication sharedApplication] openURL:[self.class _urlForUsername:_user] options:@{} completionHandler:nil];
 }
 @end
@@ -621,11 +578,9 @@ OBWelcomeController *welcomeController;
     if (self) {
         self.type = type;
         self.hostController = controller;
-
         self.key = specifier.properties[@"key"];
         self.postNotification = specifier.properties[@"PostNotification"];
         self.tintColor = specifier.properties[@"tintColor"];
-
         self.feedbackGenerator = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
         [self.feedbackGenerator prepare];
         
@@ -640,7 +595,6 @@ OBWelcomeController *welcomeController;
         self.iconView.contentMode = UIViewContentModeScaleAspectFit;
         self.iconView.translatesAutoresizingMaskIntoConstraints = false;
         self.iconView.image = image;
-
         [self addArrangedSubview:self.iconView];
         [self.iconView.widthAnchor constraintEqualToConstant:60].active = true;
 
@@ -648,27 +602,34 @@ OBWelcomeController *welcomeController;
         self.captionLabel.text = text;
         [self.captionLabel setFont:[UIFont systemFontOfSize:17.0f]];
         [self.captionLabel.heightAnchor constraintEqualToConstant:20].active = true;
-
         [self addArrangedSubview:self.captionLabel];
-
-        [self.captionLabel setTextColor:[UIColor labelColor]];
+        if (@available(iOS 13.0, *)) {
+            [self.captionLabel setTextColor:[UIColor labelColor]];
+        } else {
+            [self.captionLabel setTextColor:[UIColor darkTextColor]];
+        }
 
         self.checkmarkButton = [UIButton buttonWithType:UIButtonTypeCustom];
         self.checkmarkButton.translatesAutoresizingMaskIntoConstraints = false;
-
         
         NSString *path = [NSString stringWithFormat:@"/var/mobile/Library/Preferences/%@.plist", specifier.properties[@"defaults"]];
         NSMutableDictionary *settings = [NSMutableDictionary dictionary];
         [settings addEntriesFromDictionary:[NSDictionary dictionaryWithContentsOfFile:path]];
-
         self.checkmarkButton.selected = [[settings objectForKey:specifier.properties[@"key"]] ?: specifier.properties[@"default"] intValue] == self.type;
-
         self.checkmarkButton.tintColor = (self.checkmarkButton.selected) ? (self.tintColor ? [UIColor colorFromHexString:self.tintColor] : [UIColor systemBlueColor]) : [UIColor systemGrayColor];
         [self.checkmarkButton.heightAnchor constraintEqualToConstant:22].active = true;
         [self.checkmarkButton.widthAnchor constraintEqualToConstant:22].active = true;
-
-        [self.checkmarkButton setImage:[[UIImage kitImageNamed:@"UIRemoveControlMultiNotCheckedImage.png"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateNormal];
-        [self.checkmarkButton setImage:[[UIImage kitImageNamed:@"UITintedCircularButtonCheckmark.png"] imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate] forState:UIControlStateSelected];
+        
+        UIImage *normalImage, *selectedImage;
+        if (@available(iOS 13.0, *)) {
+            normalImage = [UIImage systemImageNamed:@"circle"];
+            selectedImage = [UIImage systemImageNamed:@"checkmark.circle.fill"];
+        } else {
+            normalImage = [UIImage imageNamed:@"circle.png"];
+            selectedImage = [UIImage imageNamed:@"checkmark_circle_fill.png"];
+        }
+        [self.checkmarkButton setImage:normalImage forState:UIControlStateNormal];
+        [self.checkmarkButton setImage:selectedImage forState:UIControlStateSelected];
         [self.checkmarkButton addTarget:self action:@selector(buttonTapped) forControlEvents:UIControlEventTouchUpInside];
         [self addArrangedSubview:self.checkmarkButton];
 
@@ -677,7 +638,6 @@ OBWelcomeController *welcomeController;
         [self setUserInteractionEnabled:true];
         [self addGestureRecognizer:self.tapGestureRecognizer];
     }
-
     return self;
 }
 
@@ -691,37 +651,30 @@ OBWelcomeController *welcomeController;
             self.alpha = 1;
             [self.hostController updateForType:self.type];
         } completion:^(BOOL finished) {}];
-
         [self.feedbackGenerator impactOccurred];
-
         NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:@"/var/mobile/Library/Preferences/com.ryannair05.little12.plist"];
         [prefs setValue:[NSNumber numberWithInt:self.type] forKey:self.key]; 
         [prefs writeToFile:@"/var/mobile/Library/Preferences/com.ryannair05.little12.plist" atomically:YES]; 
-
         if(self.postNotification) {
             CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), (__bridge CFStringRef)self.postNotification, NULL, NULL, true);
         }
     }
 }
-
 @end
 
 @implementation L12AppearanceSelectionTableCell
 
 - (L12AppearanceSelectionTableCell *)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier specifier:(PSSpecifier *)specifier {
     self = [super initWithStyle:style reuseIdentifier:reuseIdentifier specifier:specifier];
-
     if (self) {
         NSBundle *prefsBundle = [NSBundle bundleForClass:[specifier.target class]];
         self.options = specifier.properties[@"options"];
-
         self.containerStackView = [[UIStackView alloc] init];
         self.containerStackView.axis = UILayoutConstraintAxisHorizontal;
         self.containerStackView.alignment = UIStackViewAlignmentCenter;
         self.containerStackView.distribution = UIStackViewDistributionEqualSpacing;
         self.containerStackView.spacing = 60;
         self.containerStackView.translatesAutoresizingMaskIntoConstraints = false;
-
         for (NSDictionary *option in self.options) {
             L12AppearanceTypeStackView *stackView = [[L12AppearanceTypeStackView alloc] initWithType:[self.options indexOfObject:option] 
                                                                                   forController:self 
@@ -732,14 +685,11 @@ OBWelcomeController *welcomeController;
             [stackView.topAnchor constraintEqualToAnchor:self.containerStackView.topAnchor constant:16].active = true;
             [stackView.bottomAnchor constraintEqualToAnchor:self.containerStackView.bottomAnchor constant:-16].active = true;
         }
-
         [self.contentView addSubview:self.containerStackView];
-
         [self.containerStackView.heightAnchor constraintEqualToAnchor:self.heightAnchor].active = true;
         [self.containerStackView.centerXAnchor constraintEqualToAnchor:self.centerXAnchor].active = true;
         [self.containerStackView.centerYAnchor constraintEqualToAnchor:self.centerYAnchor].active = true;
     }
-
     return self;
 }
 
@@ -754,5 +704,4 @@ OBWelcomeController *welcomeController;
         subview.checkmarkButton.tintColor = (subview.checkmarkButton.selected) ? (subview.tintColor ? [UIColor colorFromHexString:subview.tintColor] : [UIColor systemBlueColor]) : [UIColor systemGrayColor];
     }
 }
-
 @end

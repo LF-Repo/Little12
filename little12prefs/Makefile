@@ -1,11 +1,16 @@
-include $(THEOS)/makefiles/common.mk
+include /var/theos/makefiles/common.mk
 
-ARCHS = arm64 arm64e
+ARCHS = arm64
+
+THEOS_PACKAGE_SCHEME = rootless
 
 BUNDLE_NAME = little12prefs
 little12prefs_FILES = L12RootListController.m L12AppSettingsController.m OrderedDictionary.m
-little12prefs_INSTALL_PATH = /Library/PreferenceBundles
+
 little12prefs_PRIVATE_FRAMEWORKS = Preferences SpringBoardServices OnBoardingKit
+
+
+little12prefs_INSTALL_PATH = /Library/PreferenceBundles
 
 include $(THEOS_MAKE_PATH)/bundle.mk
 

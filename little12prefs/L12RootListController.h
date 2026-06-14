@@ -37,7 +37,6 @@
 - (void)addBulletedListItemWithTitle:(id)arg1 description:(id)arg2 image:(id)arg3;
 @end
 
-
 @interface L12TwitterCell : PSTableCell
 @property (nonatomic, retain, readonly) UIView *avatarView;
 @property (nonatomic, retain, readonly) UIImageView *avatarImageView;
@@ -48,7 +47,6 @@
 }
 @end
 
-
 @interface UIImage (Private)
 + (UIImage*)kitImageNamed:(NSString*)name;
 @end
@@ -56,7 +54,6 @@
 @interface UIColor (libappearancecell)
 + (UIColor *)colorFromHexString:(NSString *)hexString;
 @end
-
 
 @interface L12AppearanceSelectionTableCell : PSTableCell
 @property(nonatomic, retain) UIStackView *containerStackView;
